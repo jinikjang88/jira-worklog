@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JIRA Worklog 통계</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        /* 제목과 버튼을 포함하는 헤더 영역 */
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .header-container h1 {
+            margin: 0;
+        }
+        .container {
+            position: relative;
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #0052cc;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0043a6;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+            color: #666;
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f8f8f8;
+            font-weight: bold;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .highlight-red {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 1.1em;
+        }
+        .help-button {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: #28a745;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: 'Arial', sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            margin: 10px;
+            /* 컨테이너 기준으로 위치 조정을 위해 수정 */
+            position: absolute;
+            right: 0;
+        }
+        .help-button:hover {
+            background-color: #218838;
+        }
+        .pdf-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            z-index: 1000;
+        }
+        .pdf-container {
+            position: relative;
+            width: 80%;
+            height: 90%;
+            margin: 2% auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .close-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+        .pdf-viewer {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-container">
+            <h1>JIRA Worklog 통계</h1>
+            <button class="help-button" onclick="openHelp()">사용 설명서</button>
+        </div>
+        <div class="form-group">
+            <label for="email">지라 계정</label>
+            <input type="email" id="email" placeholder="이메일을 입력하세요" required>
+        </div>
+        <div class="form-group">
+            <label for="startDate">조회일</label>
+            <input type="date" id="startDate" required>
+        </div>
+        <button id="fetchButton" onclick="fetchWorkLogs()">통계 조회</button>
+        <div id="loading" class="loading">데이터를 불러오는 중...</div>
+        <div id="error" class="error"></div>
+        <div id="results" class="results"></div>
+    </div>
+
+    <!-- PDF 모달 -->
+    <div id="pdfModal" class="pdf-modal">
+        <div class="pdf-container">
+            <span class="close-button" onclick="closeHelp()">&times;</span>
+            <iframe id="pdfViewer" class="pdf-viewer"></iframe>
+        </div>
+    </div>
+
+    <script>
+        // 유틸리티 함수들
+        const utils = {
+            formatTime(seconds) {
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                return { hours, minutes };
+            },
+
+            formatDate(date) {
+                return date.toISOString().split('T')[0];
+            },
+
+            showLoading() {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('fetchButton').disabled = true;
+            },
+
+            hideLoading() {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('fetchButton').disabled = false;
+            },
+
+            showError(message) {
+                const errorDiv = document.getElementById('error');
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+                document.getElementById('results').innerHTML = '';
+            },
+
+            hideError() {
+                document.getElementById('error').style.display = 'none';
+            }
+        };
+
+        // 페이지 로드 시 초기화
+        window.addEventListener('DOMContentLoaded', async () => {
+            // 항상 오늘 날짜로 설정
+            const today = new Date();
+            const formattedDate = utils.formatDate(today);
+            document.getElementById('startDate').value = formattedDate;
+
+            // 저장된 이메일만 불러오기 (날짜는 제외)
+            const savedEmail = localStorage.getItem('jiraEmail');
+            if (savedEmail) {
+                document.getElementById('email').value = savedEmail;
+            }
+        });
+
+        // localStorage에 이메일만 저장하고 날짜는 저장하지 않도록 수정
+        async function fetchWorkLogs() {
+            utils.hideError();
+            utils.showLoading();
+
+            const email = document.getElementById('email').value;
+            const startDate = document.getElementById('startDate').value;
+            const domain = '@woowafriends.com';
+            const fullEmail = email.includes('@') ? email : `${email}${domain}`;
+
+            // 이메일만 저장
+            localStorage.setItem('jiraEmail', email);
+
+            try {
+                const response = await fetch('/api/worklog', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: fullEmail,
+                        startDate
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || '데이터 조회 중 오류가 발생했습니다.');
+                }
+
+                displayResults(data);
+            } catch (error) {
+                utils.showError(error.message);
+            } finally {
+                utils.hideLoading();
+            }
+        }
+
+        // 결과 표시
+        function displayResults(stats) {
+            const resultsDiv = document.getElementById('results');
+            const currentDate = document.getElementById('startDate').value;
+
+            if (!stats || Object.keys(stats).length <= 1) { // total만 있는 경우
+                resultsDiv.innerHTML = `
+                    <div class="summary">
+                        아직 등록된 워크로그가 없습니다. 워크로그를 작성해주세요!
+                    </div>`;
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.innerHTML = `
+                <tr>
+                    <th>이슈</th>
+                    <th>작업 시간</th>
+                    <th>링크</th>
+                </tr>
+            `;
+
+            Object.entries(stats).forEach(([key, data]) => {
+                if (key !== 'total') {
+                    const { hours, minutes } = utils.formatTime(data.totalSeconds);
+                    const row = table.insertRow();
+                    row.innerHTML = `
+                        <td>${key} - ${data.name}</td>
+                        <td>${hours}시간 ${minutes}분</td>
+                        <td><a href="#" onclick="openExternal('https://cloud.jira.woowa.in/browse/${key}'); return false;">링크</a></td>
+                    `;
+                }
+            });
+
+            resultsDiv.innerHTML = '';
+            resultsDiv.appendChild(table);
+
+            // 총 시간 표시
+            const { hours: totalHours, minutes: totalMinutes } = utils.formatTime(stats.total);
+            const totalDiv = document.createElement('div');
+            totalDiv.className = 'summary';
+            
+            if (stats.total > 0) {
+                totalDiv.innerHTML = `
+                    '${currentDate}' 기준 <span class="highlight-red">총 ${totalHours}시간 ${totalMinutes}분</span> 
+                    업무를 하였습니다. 고생하셨습니다. ^^
+                `;
+            } else {
+                totalDiv.innerHTML = `<span class="highlight-red">워크로그를 작성해주세요!</span>`;
+            }
+            
+            resultsDiv.appendChild(totalDiv);
+        }
+
+        // PDF 뷰어 관련 함수
+        function openHelp() {
+            const modal = document.getElementById('pdfModal');
+            const viewer = document.getElementById('pdfViewer');
+            viewer.src = './manual/guide.pdf';
+            modal.style.display = 'block';
+        }
+
+        function closeHelp() {
+            const modal = document.getElementById('pdfModal');
+            const viewer = document.getElementById('pdfViewer');
+            viewer.src = '';
+            modal.style.display = 'none';
+        }
+
+        // ESC 키로 모달 닫기
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeHelp();
+            }
+        });
+
+        // script 부분에 함수 추가
+        function openExternal(url) {
+            require('electron').shell.openExternal(url);
+        }
+    </script>
+</body>
+</html>
