@@ -4,6 +4,8 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const fs = require('fs');
+const { start } = require('repl');
+const { time } = require('console');
 require('dotenv').config();
 
 // 로깅 유틸리티
@@ -55,10 +57,10 @@ const Logger = {
 
 // JIRA 서비스
 const JiraService = {
-    async getWorkLogs(email, startDate) {
+    async getWorkLogs(email, apiKey, startDate) {
         Logger.info(`워크로그 조회 시작 - 이메일: ${email}, 날짜: ${startDate}`);
         
-        const auth = Buffer.from(`${email}:${process.env.JIRA_API_TOKEN}`).toString('base64');
+        const auth = Buffer.from(`${email}:${apiKey}`).toString('base64');
         const jql = encodeURIComponent(
             `project = ITO AND worklogAuthor = currentUser() AND worklogDate = "${startDate}" ORDER BY updated DESC`
         );
@@ -73,12 +75,12 @@ const JiraService = {
                     'Accept': 'application/json'
                 }
             });
-            
+
             Logger.debug('JIRA API 응답 성공', { 
                 data: response.data,
                 issueCount: response.data?.issues?.length 
             });
-            
+
             return this.processWorklogResponse(response.data, startDate, email);
         } catch (error) {
             Logger.error('JIRA API 호출 실패', error);
@@ -86,42 +88,95 @@ const JiraService = {
         }
     },
 
-    processWorklogResponse(data, startDate, email) {
+    async processWorklogResponse(data, startDate, email, apiKey) {
         const stats = { total: 0 };
-        
+
         if (!data?.issues?.length) {
             Logger.info('검색된 이슈 없음');
             return stats;
         }
 
-        data.issues.forEach(issue => {
-            const worklogs = issue.fields?.worklog?.worklogs || [];
-            
-            worklogs.forEach(worklog => {
-                const worklogDate = worklog.started.split('T')[0];
+        const endOfDay = new Date(startDate);
+        endOfDay.setHours(0, 0, 0, 0);
+        const timestamp = endOfDay.getTime();
 
-                if (startDate === worklogDate && email === worklog.author.emailAddress) {
-                    Logger.info(issue.fields.summary);
-                    if (!stats[issue.key]) {
-                        stats[issue.key] = {
-                            name: issue.fields.summary,
-                            totalSeconds: 0,
-                            link: `${process.env.JIRA_URL}/browse/${issue.key}`
-                        };
+        try {
+            for (const issue of data.issues) {
+                Logger.info('이슈 처리 시작', {
+                    key: issue.key,
+                    summary: issue.fields.summary
+                });
+
+                try {
+                    const worklogResponse = await this.getIssueByKey(issue.key, email, apiKey, timestamp);
+
+                    if (worklogResponse?.worklogs?.length > 0) {
+                        const dayWorklogs = worklogResponse.worklogs.filter(worklog => {
+                            const worklogDate = worklog.started.split('T')[0];
+                            return startDate === worklogDate && email === worklog.author.emailAddress;
+                        });
+
+                        if (dayWorklogs.length > 0) {
+                            stats[issue.key] = {
+                                name: issue.fields.summary,
+                                totalSeconds: dayWorklogs.reduce((total, worklog) => total + worklog.timeSpentSeconds, 0),
+                                link: `${process.env.JIRA_URL}/browse/${issue.key}`
+                            };
+                            stats.total += stats[issue.key].totalSeconds;
+
+                            Logger.info('이슈 워크로그 처리 완료', {
+                                key: issue.key,
+                                totalSeconds: stats[issue.key].totalSeconds
+                            });
+                        }
                     }
-                    stats[issue.key].totalSeconds += worklog.timeSpentSeconds;
-                    stats.total += worklog.timeSpentSeconds;
+                } catch (error) {
+                    Logger.error(`이슈 ${issue.key} 워크로그 조회 실패`, error);
+                     // 해당 이슈는 건너뛰고 다음 이슈 처리
                 }
-            });
-        });
-        
-        Logger.info('워크로그 처리 완료', { 
+            }
+        } catch (error) {
+            Logger.error('워크로그 처리 중 오류 발생', error);
+            throw error;
+        }
+
+        Logger.info('전체 워크로그 처리 완료', {
             issueCount: Object.keys(stats).length - 1,
-            totalSeconds: stats.total 
+            totalSeconds: stats.total
         });
-        
+
         return stats;
     },
+
+    async getIssueByKey(issueKey, email, apiKey, timestamp) {
+        const auth = Buffer.from(`${email}:${apiKey}`).toString('base64');
+        const apiUrl = `${process.env.JIRA_URL}/rest/api/2/issue/${issueKey}/worklog`;
+
+        Logger.info('워크로그 API 요청', { issueKey, apiUrl });
+
+        try {
+            const response = await axios.get(apiUrl, {
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json'
+                },
+                params: {
+                    maxResults: 100,
+                    startedAfter: timestamp
+                }
+            });
+
+            Logger.debug('워크로그 API 응답 성공', {
+                issueKey,
+                worklogCount: response.data?.worklogs?.length
+            });
+
+            return response.data;
+        } catch (error) {
+            throw error;
+        }
+    },
+
 
     handleJiraError(error) {
         const errorMessage = error.response?.data?.errorMessages?.join(', ') 

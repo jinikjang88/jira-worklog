@@ -170,6 +170,10 @@
             <label for="email">지라 계정</label>
             <input type="email" id="email" placeholder="이메일을 입력하세요" required>
         </div>
+			  <div class="form-group">
+						<label for="apiKey">API Key</label>
+						<input type="password" id="apiKey" placeholder="JIRA API Key를 입력하세요" required>
+				</div>
         <div class="form-group">
             <label for="startDate">조회일</label>
             <input type="date" id="startDate" required>
@@ -232,9 +236,13 @@
 
             // 저장된 이메일만 불러오기 (날짜는 제외)
             const savedEmail = localStorage.getItem('jiraEmail');
-            if (savedEmail) {
-                document.getElementById('email').value = savedEmail;
-            }
+						const savedApiKey = localStorage.getItem('jiraApiKey');
+						if (savedEmail) {
+							document.getElementById('email').value = savedEmail;
+						}
+						if (savedApiKey) {
+							document.getElementById('apiKey').value = savedApiKey;
+						}
         });
 
         // localStorage에 이메일만 저장하고 날짜는 저장하지 않도록 수정
@@ -243,12 +251,14 @@
             utils.showLoading();
 
             const email = document.getElementById('email').value;
+						const apiKey = document.getElementById('apiKey').value;
             const startDate = document.getElementById('startDate').value;
             const domain = '@woowafriends.com';
             const fullEmail = email.includes('@') ? email : `${email}${domain}`;
-
-            // 이메일만 저장
-            localStorage.setItem('jiraEmail', email);
+					
+						// 이메일과 API 키 저장
+						localStorage.setItem('jiraEmail', email);
+						localStorage.setItem('jiraApiKey', apiKey);
 
             try {
                 const response = await fetch('/api/worklog', {
@@ -258,6 +268,7 @@
                     },
                     body: JSON.stringify({
                         email: fullEmail,
+												apiKey: apiKey,
                         startDate
                     })
                 });
