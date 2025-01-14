@@ -59,8 +59,9 @@ const Logger = {
 const JiraService = {
     async getWorkLogs(email, apiKey, startDate) {
         Logger.info(`워크로그 조회 시작 - 이메일: ${email}, 날짜: ${startDate}`);
-        
+
         const auth = Buffer.from(`${email}:${apiKey}`).toString('base64');
+        Logger.info('auth', auth);
         const jql = encodeURIComponent(
             `project = ITO AND worklogAuthor = currentUser() AND worklogDate = "${startDate}" ORDER BY updated DESC`
         );
@@ -81,7 +82,7 @@ const JiraService = {
                 issueCount: response.data?.issues?.length 
             });
 
-            return this.processWorklogResponse(response.data, startDate, email);
+            return this.processWorklogResponse(response.data, startDate, email, apiKey);
         } catch (error) {
             Logger.error('JIRA API 호출 실패', error);
             throw this.handleJiraError(error);
@@ -283,17 +284,17 @@ class WindowManager {
 
     setupRoutes(app) {
         app.post('/api/worklog', async (req, res) => {
-            const { email, startDate } = req.body;
+            const { email, apiKey, startDate } = req.body;
             
-            if (!email || !startDate) {
-                Logger.error('잘못된 요청', { email, startDate });
+            if (!email || !startDate || !apiKey) {
+                Logger.error('잘못된 요청', { email, startDate, apiKey });
                 return res.status(400).json({ 
-                    error: '이메일과 날짜는 필수 입력값입니다.' 
+                    error: '이메일과 키, 날짜는 필수 입력값입니다.'
                 });
             }
 
             try {
-                const stats = await JiraService.getWorkLogs(email, startDate);
+                const stats = await JiraService.getWorkLogs(email, apiKey, startDate);
                 res.json(stats);
             } catch (error) {
                 Logger.error('워크로그 조회 실패', error);
