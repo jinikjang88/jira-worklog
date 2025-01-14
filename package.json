@@ -33,8 +33,6 @@
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/.bin",
       "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
-      "!.env",
-      "!.env.*",
       "!dist",
       "!build",
       "!docs",
@@ -44,8 +42,7 @@
     ],
     "asar": true,
     "asarUnpack": [
-      "public/**/*",
-      ".env"
+      "public/**/*"
     ],
     "extraResources": [
       {
