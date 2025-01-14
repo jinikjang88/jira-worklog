@@ -8,6 +8,10 @@ const { start } = require('repl');
 const { time } = require('console');
 require('dotenv').config();
 
+const JIRA_URL = 'https://woowahanbros.atlassian.net';
+const JIRA_CLOUD_URL = 'https://cloud.jira.woowa.in';
+
+
 // 로깅 유틸리티
 const Logger = {
     logFile: 'app.log',
@@ -67,7 +71,7 @@ const JiraService = {
         );
         
         try {
-            const apiUrl = `${process.env.JIRA_URL}/rest/api/2/search?jql=${jql}&fields=worklog,summary`;
+            const apiUrl = `${JIRA_URL}/rest/api/2/search?jql=${jql}&fields=worklog,summary`;
             Logger.debug('JIRA API 요청', { url: apiUrl });
 
             const response = await axios.get(apiUrl, {
@@ -121,7 +125,7 @@ const JiraService = {
                             stats[issue.key] = {
                                 name: issue.fields.summary,
                                 totalSeconds: dayWorklogs.reduce((total, worklog) => total + worklog.timeSpentSeconds, 0),
-                                link: `${process.env.JIRA_URL}/browse/${issue.key}`
+                                link: `${JIRA_CLOUD_URL}/browse/${issue.key}`
                             };
                             stats.total += stats[issue.key].totalSeconds;
 
@@ -151,7 +155,7 @@ const JiraService = {
 
     async getIssueByKey(issueKey, email, apiKey, timestamp) {
         const auth = Buffer.from(`${email}:${apiKey}`).toString('base64');
-        const apiUrl = `${process.env.JIRA_URL}/rest/api/2/issue/${issueKey}/worklog`;
+        const apiUrl = `${JIRA_URL}/rest/api/2/issue/${issueKey}/worklog`;
 
         Logger.info('워크로그 API 요청', { issueKey, apiUrl });
 
